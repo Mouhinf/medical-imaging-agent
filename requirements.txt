@@ -1,0 +1,7 @@
+streamlit==1.40.2
+agno>=2.2.10
+Pillow==11.0.0
+pydicom==3.0.2
+openai>=1.0.0
+duckduckgo-search>=6.4.2,<9
+tenacity==8.2.3
