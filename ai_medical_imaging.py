@@ -73,6 +73,7 @@ if st.session_state.OPENROUTER_API_KEY:
             model=OpenRouter(
                 id="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
                 api_key=st.session_state.OPENROUTER_API_KEY,
+                max_tokens=8192,
             ),
             markdown=True
         )
