@@ -80,7 +80,7 @@ if st.session_state.OPENROUTER_API_KEY:
     try:
         medical_agent = Agent(
             model=OpenRouter(
-                id="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+                id="nvidia/nemotron-nano-12b-v2-vl:free",
                 api_key=st.session_state.OPENROUTER_API_KEY,
                 max_tokens=8192,
             ),
