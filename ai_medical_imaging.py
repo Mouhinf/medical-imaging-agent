@@ -51,10 +51,51 @@ def process_uploaded_file(uploaded_file):
 
 # --- Interface Streamlit ---
 
-st.set_page_config(layout="wide")
+st.set_page_config(
+    page_title="Analyseur d'Imagerie Médicale IA",
+    page_icon="🏥",
+    layout="wide"
+)
+
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.2rem;
+        font-weight: 700;
+        margin-bottom: 0.2rem;
+    }
+    .sub-header {
+        font-size: 1rem;
+        color: #6b7280;
+        margin-bottom: 1.5rem;
+    }
+    .analysis-card {
+        background-color: #f0f2f6;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+    }
+    .badge {
+        display: inline-block;
+        background-color: #10b981;
+        color: white;
+        padding: 0.15rem 0.6rem;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .badge-urgent {
+        background-color: #ef4444;
+    }
+    .stProgress > div > div > div > div {
+        background-color: #2563eb;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 with st.sidebar:
-    st.title("ℹ️ Configuration")
+    st.image("https://img.icons8.com/fluency/96/hospital-3.png", width=60)
+    st.markdown("### ℹ️ Configuration")
 
     if "OPENROUTER_API_KEY" not in st.session_state:
         try:
@@ -65,14 +106,23 @@ with st.sidebar:
             st.session_state.OPENROUTER_API_KEY = None
 
     if st.session_state.OPENROUTER_API_KEY:
-        st.success("✅ Clé API (OpenRouter) configurée.")
+        st.success("✅ Clé API active")
     else:
-        st.error("❌ Clé API OpenRouter introuvable dans `.streamlit/secrets.toml`.")
+        st.error("❌ Clé API introuvable")
 
-    st.info(
-        "Cet outil fournit une analyse assistée par IA des données d'imagerie médicale "
-        "en utilisant la vision par ordinateur et l'expertise radiologique."
-    )
+    st.divider()
+
+    st.markdown("""
+    **📋 Capacités**
+    - Détection de lésions & anomalies
+    - Analyse multi-modalités
+    - Compte rendu structuré
+    - Évaluation de sévérité
+    - Recommandations
+    """)
+
+    st.divider()
+    st.caption("🔒 Analyse locale - Les images ne sont pas stockées")
 
 # --- Initialisation de l'Agent ---
 medical_agent = None
@@ -87,50 +137,60 @@ if st.session_state.OPENROUTER_API_KEY:
             markdown=True
         )
     except Exception as e:
-        st.error(f"Échec de l'initialisation de l'agent IA : {e}")
-        st.warning("Veuillez vérifier votre clé API et votre connexion internet.")
+        st.error(f"Erreur d'initialisation : {e}")
 
 if not medical_agent:
-    st.warning("Veuillez configurer une clé API valide dans la barre latérale pour activer l'agent.")
+    st.warning("Veuillez configurer une clé API valide dans la barre latérale.")
 
-# --- Requête d'Analyse ---
+# --- Requête d'Analyse Technique ---
 query = """
-Tu es un radiologue expert. Analyse les images médicales fournies et réponds UNIQUEMENT en français, de façon directe.
+Tu es un radiologue senior, expert en imagerie médicale. Analyse les images fournies et rédige un compte rendu structuré en français, au format professionnel.
 
-Contexte - Ce qu'un spécialiste recherche :
-1. Identifier une lésion (fracture, déchirure, luxation, hernie discale)
-2. Détecter une maladie (pneumonie, arthrose, tumeur, AVC, calcul rénal)
-3. Évaluer la gravité (taille, nombre, étendue, degré d'usure)
-4. Déterminer la localisation précise
-5. Rechercher la cause d'un symptôme
-6. Suivre l'évolution (comparaison, consolidation, efficacité traitement)
-7. Préparer un traitement (chirurgie, prothèse, radiothérapie, biopsie)
+## Méthodologie d'analyse
+1. Identifier la modalité et la région anatomique
+2. Analyser systématiquement chaque structure visible
+3. Décrire les anomalies avec terminologie médicale précise
+4. Évaluer la sévérité et l'urgence
+5. Formuler un diagnostic raisonné
+6. Proposer des examens complémentaires si indiqué
 
-Structure ta réponse ainsi :
+## Structure du rapport attendue
 
-## 1. Type d'examen
-- Modalité et région anatomique
+### 1. Renseignements
+- Modalité, région anatomique, incidence / coupe
 
-## 2. Observations
-- Décris chaque anomalie : localisation, taille, étendue, sévérité
-- Si tout est normal, écris : "Aucune anomalie détectée."
+### 2. Description sémiologique
+- Pour chaque structure analysée : signal / densité, forme, contours, taille, limites
+- Anomalies : localisation précise, taille (mm), densité / signal, contours, caractère (homogène/ hétérogène)
+- Si normal : "Structure d'aspect normal."
 
-## 3. Diagnostic
-- Diagnostic principal avec niveau de confiance
-- Diagnostics différentiels possibles
+### 3. Interprétation
+- Diagnostic principal
+- Diagnostics différentiels (classés par probabilité)
+- Sémiologie clinique associée
+
+### 4. Conclusion
 - Urgence : OUI / NON
-- Examens complémentaires recommandés si nécessaire
+- Sévérité : Normale / Légère / Modérée / Grave
+- Recommandations : examens complémentaires, délai de prise en charge
+- Résumé fonctionnel (2-3 lignes)
 
-## 4. Conclusion
-- Résumé en langage clair (2-3 phrases max)
-- Réponds à : Y a-t-il une anomalie ? Où ? Quelle est la cause probable ? Faut-il d'autres examens ?
-
-Sois concis et direct. Ne mets PAS de phrase d'accroche.
+Format : markdown structuré, termes médicaux précis, pas de phrase d'introduction.
 """
 
 # --- Interface Utilisateur ---
-st.title("🏥 Agent de Diagnostic en Imagerie Médicale")
-st.write("Téléchargez **une ou plusieurs images médicales** (JPG, JPEG, PNG, DICOM) pour une analyse comparative complète.")
+st.markdown("<div class='main-header'>🏥 Analyseur d'Imagerie Médicale</div>", unsafe_allow_html=True)
+st.markdown("<div class='sub-header'>Assistant IA spécialisé en radiologie — Téléchargez une ou plusieurs images pour un compte rendu structuré</div>", unsafe_allow_html=True)
+
+b1, b2, b3 = st.columns(3)
+with b1:
+    st.markdown("🩻 **Rayons X**\nThorax, os, abdomen")
+with b2:
+    st.markdown("🧠 **IRM / Scanner**\nCerveau, articulations, organes")
+with b3:
+    st.markdown("📊 **DICOM**\nFormat natif accepté")
+
+st.divider()
 
 upload_container = st.container()
 image_container = st.container()
@@ -138,10 +198,10 @@ analysis_container = st.container()
 
 with upload_container:
     uploaded_files = st.file_uploader(
-        "Télécharger des images médicales",
+        "📤 Sélectionner des images médicales",
         type=["jpg", "jpeg", "png", "dicom"],
         accept_multiple_files=True,
-        help="Formats supportés : JPG, JPEG, PNG, DICOM. Vous pouvez sélectionner plusieurs fichiers."
+        help="JPG, JPEG, PNG, DICOM — plusieurs fichiers acceptés"
     )
 
 if uploaded_files and len(uploaded_files) > 0 and medical_agent:
@@ -149,8 +209,9 @@ if uploaded_files and len(uploaded_files) > 0 and medical_agent:
 
     with image_container:
         try:
-            st.markdown(f"**{len(uploaded_files)} image(s) téléchargée(s) :**")
-            cols = st.columns(min(len(uploaded_files), 4))
+            n = len(uploaded_files)
+            st.markdown(f"**{n} fichier(s) téléchargé(s)**")
+            cols = st.columns(min(n, 4))
             resized_images = []
             for i, f in enumerate(uploaded_files):
                 img = process_uploaded_file(f)
@@ -158,63 +219,59 @@ if uploaded_files and len(uploaded_files) > 0 and medical_agent:
                 with cols[i % 4]:
                     st.image(img, caption=f.name, use_container_width=True)
 
-            analyze_button = st.button(
-                f"🔍 Analyser les {len(uploaded_files)} images",
-                type="primary",
-                use_container_width=True
-            )
+            col_a, col_b = st.columns([3, 1])
+            with col_b:
+                analyze_button = st.button(
+                    "🔍 Lancer l'analyse" if n == 1 else f"🔍 Analyser les {n} images",
+                    type="primary",
+                    use_container_width=True
+                )
 
         except ValueError as ve:
             st.error(f"Erreur de chargement : {ve}")
         except Exception as e:
-            st.error(f"Erreur inattendue lors du chargement : {e}")
+            st.error(f"Erreur inattendue : {e}")
 
     with analysis_container:
         if analyze_button:
-            progress_bar = st.progress(0, text="🔄 Préparation...")
+            status = st.status("🔄 Analyse en cours...", expanded=True)
 
             try:
-                progress_bar.progress(10, text=f"📂 {len(uploaded_files)} image(s) chargée(s)")
-
+                status.update(label="📂 Préparation des images...", state="running")
                 for i, (f, img) in enumerate(zip(uploaded_files, resized_images)):
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".png", prefix=f"img_{i}_") as tmp:
                         temp_paths.append(tmp.name)
                         img.save(tmp.name)
 
-                progress_bar.progress(30, text="📤 Envoi à l'API...")
+                status.update(label="📤 Transmission à l'IA radiologue...", state="running")
 
                 agno_images = [AgnoImage(filepath=p) for p in temp_paths]
                 response: RunOutput = run_agent_with_retry(medical_agent, query, images=agno_images)
 
-                progress_bar.progress(90, text="📝 Génération du rapport...")
-                time.sleep(0.2)
+                status.update(label="✅ Analyse terminée", state="complete")
 
-                progress_bar.progress(100, text="✅ Analyse terminée !")
-                time.sleep(0.2)
-                progress_bar.empty()
-
-                st.markdown("### 📋 Résultats de l'Analyse")
                 st.markdown("---")
+                st.markdown("### 📋 Compte Rendu Radiologique")
                 st.markdown(response.content)
                 st.markdown("---")
-                st.caption(
-                    "Note : Cette analyse est générée par IA et doit être examinée par "
-                    "un professionnel de santé qualifié."
-                )
+                st.caption("⚠️ Ce rapport est généré par IA. Il ne remplace pas l'avis d'un médecin radiologue qualifié.")
 
             except Exception as e:
+                status.update(label="❌ Erreur", state="error")
                 error_str = str(e)
                 if "524" in error_str:
-                    st.error("⏱️ Erreur 524 : le serveur upstream a mis trop de temps à répondre. Clique à nouveau sur 'Analyser' pour réessayer.")
+                    st.error("⏱️ Erreur 524 — Le serveur a mis trop de temps. Cliquez à nouveau sur Analyser.")
+                elif "429" in error_str:
+                    st.error("⏳ Limite de taux atteinte. Veuillez patienter quelques instants puis réessayer.")
                 elif "timeout" in error_str.lower():
-                    st.error("⏱️ L'analyse a pris trop de temps. Réessaie, le modèle peut être lent par moment.")
+                    st.error("⏱️ Délai d'attente dépassé. Réessayez.")
                 else:
-                    st.error(f"Erreur d'analyse : {e}")
+                    st.error(f"Erreur : {e}")
             finally:
                 for p in temp_paths:
                     if os.path.exists(p):
                         os.remove(p)
 elif not medical_agent:
-    st.warning("Veuillez configurer une clé API valide dans la barre latérale pour activer l'agent.")
+    st.warning("⚠️ Clé API manquante — configurez-la dans la barre latérale.")
 else:
-    st.info("👆 Téléchargez une ou plusieurs images médicales pour commencer l'analyse.")
+    st.info("👆 Téléchargez une ou plusieurs images médicales pour débuter.")
