@@ -95,36 +95,26 @@ if not medical_agent:
 
 # --- Requête d'Analyse ---
 query = """
-Vous êtes un expert en imagerie médicale hautement qualifié, possédant une connaissance approfondie en radiologie et en imagerie diagnostique.
-Plusieurs images médicales du patient vous sont fournies. Analysez-les ensemble pour une évaluation complète et structurez votre réponse comme suit :
+Tu es un radiologue expert. Analyse les images médicales fournies et réponds UNIQUEMENT en français, de façon directe et sans phrase d'introduction.
 
-### 1. Types d'Images & Régions
-- Pour chaque image, spécifiez la modalité (Rayon X/IRM/Scanners/Échographie/etc.)
-- Identifiez la région anatomique et le positionnement
-- Commentez la qualité de chaque image
+Structure ta réponse ainsi :
 
-### 2. Résultats Clés (Synthèse multi-images)
-- Listez les observations principales de manière systématique
-- Notez toute anomalie avec des descriptions précises en vous appuyant sur l'ensemble des images
-- Incluez les mesures et densités lorsque cela est pertinent
-- Décrivez l'emplacement, la taille, la forme et les caractéristiques
-- Évaluez la sévérité : Normal/Léger/Modéré/Grave
-- Mentionnez si des anomalies sont visibles sur certaines images et pas sur d'autres
+## 1. Images
+- Modalité et région anatomique de chaque image
 
-### 3. Évaluation Diagnostique
-- Fournissez le diagnostic principal avec un niveau de confiance
-- Listez les diagnostics différentiels par ordre de probabilité
-- Soutenez chaque diagnostic avec les preuves observées sur l'ensemble des images
-- Notez tout résultat critique ou urgent
+## 2. Résultats
+- Liste chaque anomalie détectée avec sa localisation précise
+- Si tout est normal, écris : "Aucune anomalie détectée."
 
-### 4. Explication pour le Patient
-- Expliquez les résultats dans un langage simple et clair
-- Évitez le jargon médical ou fournissez des définitions claires
-- Incluez des analogies visuelles si cela peut aider
-- Répondez aux préoccupations courantes des patients
+## 3. Diagnostic
+- Diagnostic principal
+- Diagnostics différentiels possibles
+- Urgence : OUI / NON
 
-Formatez votre réponse en utilisant des titres markdown clairs et des points. Soyez concis mais complet.
-Répondez TOUJOURS en français.
+## 4. Explication simple
+- Résumé en langage clair pour le patient (2-3 phrases max)
+
+Sois concis et direct. Ne mets PAS de phrase d'accroche.
 """
 
 # --- Interface Utilisateur ---
