@@ -40,6 +40,15 @@ def load_image_to_pil(uploaded_file, file_extension):
     else:
         return PILImage.open(uploaded_file)
 
+def process_uploaded_file(uploaded_file):
+    ext = os.path.splitext(uploaded_file.name)[1][1:].lower()
+    img_pil = load_image_to_pil(uploaded_file, ext)
+    width, height = img_pil.size
+    aspect_ratio = width / height
+    new_width = 400
+    new_height = int(new_width / aspect_ratio)
+    return img_pil.resize((new_width, new_height))
+
 # --- Interface Streamlit ---
 
 st.set_page_config(layout="wide")
@@ -86,31 +95,33 @@ if not medical_agent:
 
 # --- Requête d'Analyse ---
 query = """
-Vous êtes un expert en imagerie médicale hautement qualifié, possédant une connaissance approfondie en radiologie et en imagerie diagnostique. Analysez l'image médicale du patient et structurez votre réponse comme suit :
+Vous êtes un expert en imagerie médicale hautement qualifié, possédant une connaissance approfondie en radiologie et en imagerie diagnostique.
+Plusieurs images médicales du patient vous sont fournies. Analysez-les ensemble pour une évaluation complète et structurez votre réponse comme suit :
 
-### 1. Type d'Image & Région
-- Spécifiez la modalité d'imagerie (Rayon X/IRM/Scanners/Échographie/etc.)
-- Identifiez la région anatomique du patient et le positionnement
-- Commentez la qualité de l'image et son adéquation technique
+### 1. Types d'Images & Régions
+- Pour chaque image, spécifiez la modalité (Rayon X/IRM/Scanners/Échographie/etc.)
+- Identifiez la région anatomique et le positionnement
+- Commentez la qualité de chaque image
 
-### 2. Résultats Clés
+### 2. Résultats Clés (Synthèse multi-images)
 - Listez les observations principales de manière systématique
-- Notez toute anomalie dans l'imagerie du patient avec des descriptions précises
+- Notez toute anomalie avec des descriptions précises en vous appuyant sur l'ensemble des images
 - Incluez les mesures et densités lorsque cela est pertinent
 - Décrivez l'emplacement, la taille, la forme et les caractéristiques
 - Évaluez la sévérité : Normal/Léger/Modéré/Grave
+- Mentionnez si des anomalies sont visibles sur certaines images et pas sur d'autres
 
 ### 3. Évaluation Diagnostique
 - Fournissez le diagnostic principal avec un niveau de confiance
 - Listez les diagnostics différentiels par ordre de probabilité
-- Soutenez chaque diagnostic avec les preuves observées sur l'imagerie du patient
+- Soutenez chaque diagnostic avec les preuves observées sur l'ensemble des images
 - Notez tout résultat critique ou urgent
 
 ### 4. Explication pour le Patient
-- Expliquez les résultats dans un langage simple et clair que le patient peut comprendre
+- Expliquez les résultats dans un langage simple et clair
 - Évitez le jargon médical ou fournissez des définitions claires
 - Incluez des analogies visuelles si cela peut aider
-- Répondez aux préoccupations courantes des patients liées à ces résultats
+- Répondez aux préoccupations courantes des patients
 
 Formatez votre réponse en utilisant des titres markdown clairs et des points. Soyez concis mais complet.
 Répondez TOUJOURS en français.
@@ -118,66 +129,61 @@ Répondez TOUJOURS en français.
 
 # --- Interface Utilisateur ---
 st.title("🏥 Agent de Diagnostic en Imagerie Médicale")
-st.write("Téléchargez une image médicale (JPG, JPEG, PNG, DICOM) pour une analyse assistée par IA.")
+st.write("Téléchargez **une ou plusieurs images médicales** (JPG, JPEG, PNG, DICOM) pour une analyse comparative complète.")
 
 upload_container = st.container()
 image_container = st.container()
 analysis_container = st.container()
 
 with upload_container:
-    uploaded_file = st.file_uploader(
-        "Télécharger une image médicale",
+    uploaded_files = st.file_uploader(
+        "Télécharger des images médicales",
         type=["jpg", "jpeg", "png", "dicom"],
-        help="Formats supportés : JPG, JPEG, PNG, DICOM"
+        accept_multiple_files=True,
+        help="Formats supportés : JPG, JPEG, PNG, DICOM. Vous pouvez sélectionner plusieurs fichiers."
     )
 
-if uploaded_file is not None and medical_agent:
-    file_extension = os.path.splitext(uploaded_file.name)[1][1:].lower()
-    temp_path = None
+if uploaded_files and len(uploaded_files) > 0 and medical_agent:
+    temp_paths = []
 
     with image_container:
         try:
-            img_pil = load_image_to_pil(uploaded_file, file_extension)
-            width, height = img_pil.size
-            aspect_ratio = width / height
-            new_width = 500
-            new_height = int(new_width / aspect_ratio)
-            resized_img_pil = img_pil.resize((new_width, new_height))
-
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png", prefix="img_") as temp_file:
-                temp_path = temp_file.name
-                resized_img_pil.save(temp_path)
-
-            st.image(
-                resized_img_pil,
-                caption="Image médicale téléchargée",
-                use_container_width=True
-            )
+            st.markdown(f"**{len(uploaded_files)} image(s) téléchargée(s) :**")
+            cols = st.columns(min(len(uploaded_files), 4))
+            resized_images = []
+            for i, f in enumerate(uploaded_files):
+                img = process_uploaded_file(f)
+                resized_images.append(img)
+                with cols[i % 4]:
+                    st.image(img, caption=f.name, use_container_width=True)
 
             analyze_button = st.button(
-                "🔍 Analyser l'image",
+                f"🔍 Analyser les {len(uploaded_files)} images",
                 type="primary",
                 use_container_width=True
             )
 
         except ValueError as ve:
-            st.error(f"Erreur de chargement de l'image : {ve}")
-            uploaded_file = None
+            st.error(f"Erreur de chargement : {ve}")
         except Exception as e:
-            st.error(f"Une erreur inattendue s'est produite lors du chargement : {e}")
-            uploaded_file = None
+            st.error(f"Erreur inattendue lors du chargement : {e}")
 
     with analysis_container:
-        if analyze_button and uploaded_file and temp_path:
+        if analyze_button:
             progress_bar = st.progress(0, text="🔄 Préparation...")
 
             try:
-                progress_bar.progress(15, text="📂 Image chargée")
-                agno_image = AgnoImage(filepath=temp_path)
+                progress_bar.progress(10, text=f"📂 {len(uploaded_files)} image(s) chargée(s)")
+
+                for i, (f, img) in enumerate(zip(uploaded_files, resized_images)):
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png", prefix=f"img_{i}_") as tmp:
+                        temp_paths.append(tmp.name)
+                        img.save(tmp.name)
 
                 progress_bar.progress(30, text="📤 Envoi à l'API...")
 
-                response: RunOutput = run_agent_with_retry(medical_agent, query, images=[agno_image])
+                agno_images = [AgnoImage(filepath=p) for p in temp_paths]
+                response: RunOutput = run_agent_with_retry(medical_agent, query, images=agno_images)
 
                 progress_bar.progress(90, text="📝 Génération du rapport...")
                 time.sleep(0.2)
@@ -204,9 +210,10 @@ if uploaded_file is not None and medical_agent:
                 else:
                     st.error(f"Erreur d'analyse : {e}")
             finally:
-                if temp_path and os.path.exists(temp_path):
-                    os.remove(temp_path)
+                for p in temp_paths:
+                    if os.path.exists(p):
+                        os.remove(p)
 elif not medical_agent:
     st.warning("Veuillez configurer une clé API valide dans la barre latérale pour activer l'agent.")
 else:
-    st.info("👆 Veuillez télécharger une image médicale pour commencer l'analyse.")
+    st.info("👆 Téléchargez une ou plusieurs images médicales pour commencer l'analyse.")
