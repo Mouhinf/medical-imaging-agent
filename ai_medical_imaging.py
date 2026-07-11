@@ -95,24 +95,35 @@ if not medical_agent:
 
 # --- Requête d'Analyse ---
 query = """
-Tu es un radiologue expert. Analyse les images médicales fournies et réponds UNIQUEMENT en français, de façon directe et sans phrase d'introduction.
+Tu es un radiologue expert. Analyse les images médicales fournies et réponds UNIQUEMENT en français, de façon directe.
+
+Contexte - Ce qu'un spécialiste recherche :
+1. Identifier une lésion (fracture, déchirure, luxation, hernie discale)
+2. Détecter une maladie (pneumonie, arthrose, tumeur, AVC, calcul rénal)
+3. Évaluer la gravité (taille, nombre, étendue, degré d'usure)
+4. Déterminer la localisation précise
+5. Rechercher la cause d'un symptôme
+6. Suivre l'évolution (comparaison, consolidation, efficacité traitement)
+7. Préparer un traitement (chirurgie, prothèse, radiothérapie, biopsie)
 
 Structure ta réponse ainsi :
 
-## 1. Images
-- Modalité et région anatomique de chaque image
+## 1. Type d'examen
+- Modalité et région anatomique
 
-## 2. Résultats
-- Liste chaque anomalie détectée avec sa localisation précise
+## 2. Observations
+- Décris chaque anomalie : localisation, taille, étendue, sévérité
 - Si tout est normal, écris : "Aucune anomalie détectée."
 
 ## 3. Diagnostic
-- Diagnostic principal
+- Diagnostic principal avec niveau de confiance
 - Diagnostics différentiels possibles
 - Urgence : OUI / NON
+- Examens complémentaires recommandés si nécessaire
 
-## 4. Explication simple
-- Résumé en langage clair pour le patient (2-3 phrases max)
+## 4. Conclusion
+- Résumé en langage clair (2-3 phrases max)
+- Réponds à : Y a-t-il une anomalie ? Où ? Quelle est la cause probable ? Faut-il d'autres examens ?
 
 Sois concis et direct. Ne mets PAS de phrase d'accroche.
 """
