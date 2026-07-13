@@ -1,4 +1,5 @@
 import os
+import io
 import tempfile
 import time
 import numpy as np
@@ -65,8 +66,13 @@ def apply_rescale(pixel_array, ds):
             pass
     return pixel_array.astype(np.float64) * slope + intercept
 
+def _read_dicom(uploaded_file):
+    raw = uploaded_file.read()
+    uploaded_file.seek(0)
+    return pydicom.dcmread(io.BytesIO(raw))
+
 def dicom_to_pil(uploaded_file):
-    ds = pydicom.dcmread(uploaded_file.read())
+    ds = _read_dicom(uploaded_file)
     if 'PixelData' not in ds:
         raise ValueError("Le fichier DICOM ne contient pas de données pixel.")
     pixel_array = ds.pixel_array
@@ -88,7 +94,7 @@ def dicom_to_pil(uploaded_file):
         return PILImage.fromarray(pixel_array.astype(np.uint8))
 
 def extract_dicom_metadata(uploaded_file):
-    ds = pydicom.dcmread(uploaded_file.read())
+    ds = _read_dicom(uploaded_file)
     tags = {
         "Patient": [],
         "Examen": [],
@@ -312,19 +318,19 @@ with upload_container:
 
 if uploaded_files and len(uploaded_files) > 0 and medical_agent:
     temp_paths = []
+    analyze_button = False
+    resized_images = []
+    dicom_metadatas = []
 
     with image_container:
         try:
             n = len(uploaded_files)
             st.markdown(f"**{n} fichier(s) téléchargé(s)**")
             cols = st.columns(min(n, 4))
-            resized_images = []
-            dicom_metadatas = []
             for i, f in enumerate(uploaded_files):
                 ext = os.path.splitext(f.name)[1][1:].lower()
                 if ext in ("dicom", "dcm"):
                     meta, _ = extract_dicom_metadata(f)
-                    f.seek(0)
                     dicom_metadatas.append((i, f.name, meta))
                 img = process_uploaded_file(f)
                 resized_images.append(img)
