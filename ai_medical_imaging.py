@@ -1,6 +1,7 @@
 import os
 import tempfile
 import time
+import numpy as np
 import pydicom
 from pydicom.errors import InvalidDicomError
 from tenacity import retry, wait_exponential, stop_after_attempt
@@ -18,25 +19,130 @@ from agno.media import Image as AgnoImage
 def run_agent_with_retry(agent, query, images):
     return agent.run(query, images=images, stream=False)
 
-def load_image_to_pil(uploaded_file, file_extension):
-    if file_extension.lower() == "dicom":
+def apply_voi_lut(pixel_array, ds):
+    window_center = None
+    window_width = None
+    if hasattr(ds, 'VOILUTSequence') and ds.VOILUTSequence:
+        return pixel_array
+    if hasattr(ds, 'WindowCenter') and hasattr(ds, 'WindowWidth'):
         try:
-            ds = pydicom.dcmread(uploaded_file.read())
-            if 'PixelData' in ds:
-                import numpy as np
-                pixel_array = ds.pixel_array
-                if pixel_array.dtype != np.uint8:
-                    if pixel_array.max() > 0:
-                        pixel_array = (pixel_array / pixel_array.max() * 255).astype(np.uint8)
-                    else:
-                        pixel_array = np.zeros_like(pixel_array, dtype=np.uint8)
-                return PILImage.fromarray(pixel_array)
-            else:
-                raise ValueError("Le fichier DICOM ne contient pas de données pixel.")
-        except InvalidDicomError:
-            raise ValueError("Format de fichier DICOM invalide.")
-        except Exception as e:
-            raise ValueError(f"Erreur lors du traitement du fichier DICOM : {e}")
+            wc = ds.WindowCenter
+            ww = ds.WindowWidth
+            if isinstance(wc, pydicom.multival.MultiValue):
+                wc = float(wc[0])
+            if isinstance(ww, pydicom.multival.MultiValue):
+                ww = float(ww[0])
+            window_center = float(wc)
+            window_width = float(ww)
+        except (TypeError, ValueError):
+            pass
+    if window_center is not None and window_width is not None and window_width > 0:
+        low = window_center - window_width / 2
+        high = window_center + window_width / 2
+        pixel_array = np.clip(pixel_array, low, high)
+        pixel_array = ((pixel_array - low) / (high - low) * 255).astype(np.uint8)
+    else:
+        pixel_array = pixel_array.astype(np.float64)
+        mn, mx = pixel_array.min(), pixel_array.max()
+        if mx > mn:
+            pixel_array = ((pixel_array - mn) / (mx - mn) * 255).astype(np.uint8)
+        else:
+            pixel_array = np.zeros_like(pixel_array, dtype=np.uint8)
+    return pixel_array
+
+def apply_rescale(pixel_array, ds):
+    slope = 1.0
+    intercept = 0.0
+    if hasattr(ds, 'RescaleSlope'):
+        try:
+            slope = float(ds.RescaleSlope)
+        except (TypeError, ValueError):
+            pass
+    if hasattr(ds, 'RescaleIntercept'):
+        try:
+            intercept = float(ds.RescaleIntercept)
+        except (TypeError, ValueError):
+            pass
+    return pixel_array.astype(np.float64) * slope + intercept
+
+def dicom_to_pil(uploaded_file):
+    ds = pydicom.dcmread(uploaded_file.read())
+    if 'PixelData' not in ds:
+        raise ValueError("Le fichier DICOM ne contient pas de données pixel.")
+    pixel_array = ds.pixel_array
+    if pixel_array.ndim == 3 and pixel_array.shape[0] > 1:
+        mid = pixel_array.shape[0] // 2
+        pixel_array = pixel_array[mid]
+    elif pixel_array.ndim == 3:
+        pixel_array = pixel_array[0]
+    photometric = str(getattr(ds, 'PhotometricInterpretation', 'MONOCHROME2'))
+    pixel_array = apply_rescale(pixel_array, ds)
+    pixel_array = apply_voi_lut(pixel_array, ds)
+    if photometric == 'MONOCHROME1':
+        pixel_array = 255 - pixel_array
+    if pixel_array.ndim == 2:
+        return PILImage.fromarray(pixel_array.astype(np.uint8), mode='L')
+    elif pixel_array.ndim == 3 and pixel_array.shape[2] >= 3:
+        return PILImage.fromarray(pixel_array[:, :, :3].astype(np.uint8))
+    else:
+        return PILImage.fromarray(pixel_array.astype(np.uint8))
+
+def extract_dicom_metadata(uploaded_file):
+    ds = pydicom.dcmread(uploaded_file.read())
+    tags = {
+        "Patient": [],
+        "Examen": [],
+        "Image": [],
+    }
+    patient_fields = [
+        ("PatientName", "Nom"),
+        ("PatientID", "ID"),
+        ("PatientBirthDate", "Date naissance"),
+        ("PatientSex", "Sexe"),
+        ("PatientAge", "Âge"),
+    ]
+    exam_fields = [
+        ("StudyDate", "Date examen"),
+        ("StudyTime", "Heure examen"),
+        ("StudyDescription", "Description"),
+        ("Modality", "Modalité"),
+        ("BodyPartExamined", "Région"),
+        ("SeriesDescription", "Description série"),
+        ("ProtocolName", "Protocole"),
+    ]
+    image_fields = [
+        ("Manufacturer", "Constructeur"),
+        ("ManufacturerModelName", "Modèle"),
+        ("InstitutionName", "Institution"),
+        ("SliceThickness", "Épaisseur coupe"),
+        ("PixelSpacing", "Espacement pixel"),
+        ("KVP", "kVp"),
+        ("XRayTubeCurrent", "mA"),
+        ("Exposure", "Exposition (mAs)"),
+        ("RepetitionTime", "TR (ms)"),
+        ("EchoTime", "TE (ms)"),
+        ("MagneticFieldStrength", "Champ (T)"),
+        ("FlipAngle", "Angle de bascule"),
+        ("SeriesNumber", "N° série"),
+        ("InstanceNumber", "N° instance"),
+    ]
+    for attr, label in patient_fields:
+        val = getattr(ds, attr, None)
+        if val is not None:
+            tags["Patient"].append((label, str(val)))
+    for attr, label in exam_fields:
+        val = getattr(ds, attr, None)
+        if val is not None:
+            tags["Examen"].append((label, str(val)))
+    for attr, label in image_fields:
+        val = getattr(ds, attr, None)
+        if val is not None:
+            tags["Image"].append((label, str(val)))
+    return tags, ds
+
+def load_image_to_pil(uploaded_file, file_extension):
+    if file_extension.lower() in ("dicom", "dcm"):
+        return dicom_to_pil(uploaded_file)
     else:
         return PILImage.open(uploaded_file)
 
@@ -188,7 +294,7 @@ with b1:
 with b2:
     st.markdown("🧠 **IRM / Scanner**\nCerveau, articulations, organes")
 with b3:
-    st.markdown("📊 **DICOM**\nFormat natif accepté")
+    st.markdown("📊 **DICOM** (.dcm)\nFenêtrage, métadonnées DICOM")
 
 st.divider()
 
@@ -199,9 +305,9 @@ analysis_container = st.container()
 with upload_container:
     uploaded_files = st.file_uploader(
         "📤 Sélectionner des images médicales",
-        type=["jpg", "jpeg", "png", "dicom"],
+        type=["jpg", "jpeg", "png", "dicom", "dcm"],
         accept_multiple_files=True,
-        help="JPG, JPEG, PNG, DICOM — plusieurs fichiers acceptés"
+        help="JPG, JPEG, PNG, DICOM (.dcm) — plusieurs fichiers acceptés"
     )
 
 if uploaded_files and len(uploaded_files) > 0 and medical_agent:
@@ -213,11 +319,26 @@ if uploaded_files and len(uploaded_files) > 0 and medical_agent:
             st.markdown(f"**{n} fichier(s) téléchargé(s)**")
             cols = st.columns(min(n, 4))
             resized_images = []
+            dicom_metadatas = []
             for i, f in enumerate(uploaded_files):
+                ext = os.path.splitext(f.name)[1][1:].lower()
+                if ext in ("dicom", "dcm"):
+                    meta, _ = extract_dicom_metadata(f)
+                    f.seek(0)
+                    dicom_metadatas.append((i, f.name, meta))
                 img = process_uploaded_file(f)
                 resized_images.append(img)
                 with cols[i % 4]:
                     st.image(img, caption=f.name, use_container_width=True)
+
+            for idx, fname, meta in dicom_metadatas:
+                with st.expander(f"📋 Métadonnées DICOM — {fname}"):
+                    for section, entries in meta.items():
+                        if entries:
+                            st.markdown(f"**{section}**")
+                            for label, val in entries:
+                                st.markdown(f"- {label}: `{val}`")
+                            st.markdown("")
 
             col_a, col_b = st.columns([3, 1])
             with col_b:
@@ -245,8 +366,30 @@ if uploaded_files and len(uploaded_files) > 0 and medical_agent:
 
                 status.update(label="📤 Transmission à l'IA radiologue...", state="running")
 
+                dicom_context = ""
+                for idx, fname, meta in dicom_metadatas:
+                    modalite = ""
+                    region = ""
+                    for section, entries in meta.items():
+                        for label, val in entries:
+                            if "Modalité" in label:
+                                modalite = val
+                            if "Région" in label:
+                                region = val
+                    if modalite or region:
+                        dicom_context += f"\n- {fname}: Modalité={modalite}, Région={region}"
+
+                full_query = query
+                if dicom_context:
+                    full_query = (
+                        "Informations DICOM extraites des fichiers :\n"
+                        + dicom_context
+                        + "\n\n---\n\n"
+                        + query
+                    )
+
                 agno_images = [AgnoImage(filepath=p) for p in temp_paths]
-                response: RunOutput = run_agent_with_retry(medical_agent, query, images=agno_images)
+                response: RunOutput = run_agent_with_retry(medical_agent, full_query, images=agno_images)
 
                 status.update(label="✅ Analyse terminée", state="complete")
 
